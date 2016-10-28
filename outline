@@ -1,0 +1,23 @@
+* transactional ddl
+* foreign key on delete
+* upsert
+  - insert (returning)
+  - on conflict do nothing
+  - on conflict do update
+  - on conflict do update set new fields (updated)
+* locking
+  - select for update
+  - skip locked
+* array types
+  - queue
+* json(b) types
+  - select deep value
+  - comparison
+  - update in place
+  - select jsonb_pretty
+* notify
+  - json payload
+  - triggers
+* $N placeholders
+* materialized views
+

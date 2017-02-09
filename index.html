@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+    <title></title>
+
+    <meta name="description" content="defies description">
+    <meta name="author" content="somebody pretty cool">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+		<link rel="stylesheet" href="revealjs/css/reveal.css">
+    
+    <link href="revealjs/css/theme/black.css" id="theme" rel="stylesheet">
+
+		<!-- Code syntax highlighting -->
+		<link rel="stylesheet" href="revealjs/lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'revealjs/css/print/pdf.css' : 'revealjs/css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="revealjs/lib/js/html5shiv.js"></script>
+		<![endif]-->
+
+    
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+        <section>
+  <h1>Uniquely Postgres</h1>
+  <img src="elephant.png" style="width: 20%">
+  <p>Joel Berger</p>
+</section>
+
+<section>
+  <h3>Meta Slide</h3>
+  <ul>
+    <li>I first gave this talk at Chicago.pm on Oct 27, 2016</li>
+    <li>This is the first version of the talk</li>
+    <!-- <li>I updated it on March 21, 2016 for Milwaukee (Brew City) Perl Mongers</li> -->
+    <li>The talk is hosted at <a href="http://jberger.github.io/UniquelyPostgres" target="_blank">http://jberger.github.io/UniquelyPostgres</a></li>
+    <li>The source is available at <a href="https://github.com/jberger/UniquelyPostgres" target="_blank">https://github.com/jberger/UniquelyPostgres</a></li>
+    <li>All code samples and all tests:
+      <ul>
+        <li>are complete and run as shown</li>
+        <li>are included in the repository</li>
+      </ul>
+    </li>
+  </ul>
+</section>
+
+<section>
+  <p>This presentation uses</p>
+  <ul>
+    <li><a href="https://www.postgresql.org/" target="_blank">PostgreSQL</a> 9.4-9.6</li>
+    <li><a href="http://mojolicio.us" target="_blank">Mojolicious</a> with <a href="http://mojolicio.us/perldoc/Mojo/Pg" target="_blank">Mojo::Pg</a></li>
+  </ul>
+</section>
+
+<section>
+  <section>
+    <h3>PostgreSQL is ...</h3>
+    <ul>
+      <li>Primarily motivated by data integrity.</li>
+      <li>Has and adds lots of features that ease data integrity ...</li>
+      <li>... as long as they don't hurt data integrity elsewhere.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>PostgreSQL isn't ...</h3>
+    <ul>
+      <li>The easiest to install/quickstart</li>
+      <li>Easy to deploy master/slave</li>
+      <li>Really possible to deploy multi-master</li>
+    </ul>
+  </section>
+</section>
+
+<section>
+  <h2>Features!</h2>
+</section>
+
+<section>
+  <section>
+    <h3>Transactional DDL</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_data-&gt;migrate;
+
+$pg-&gt;db-&gt;query(
+  &#39;INSERT INTO people (first, last) VALUES (?, ?)&#39;,
+  &#39;Joel&#39;, &#39;Berger&#39;
+);
+
+print dumper $pg-&gt;db-&gt;query(&#39;SELECT * FROM people&#39;)-&gt;hash;
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE people (
+  id BIGSERIAL PRIMARY KEY,
+  first TEXT,
+  last TEXT
+);
+
+-- 1 down
+
+DROP TABLE IF EXISTS people;
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/ddl-1.pl</p>
+
+  </section>
+
+  <section>
+    <h3>Transactional DDL</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_data-&gt;migrate;
+
+print dumper $pg-&gt;db-&gt;query(&#39;SELECT * FROM people&#39;)-&gt;hash;
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE people (
+  id BIGSERIAL PRIMARY KEY,
+  first TEXT,
+  last TEXT
+);
+
+-- 1 down
+
+DROP TABLE IF EXISTS people;
+
+-- 2 up
+
+ALTER TABLE people
+  ALTER COLUMN first SET DATA TYPE TEXT USING first || &#39; &#39; || last,
+  DROP COLUMN last;
+ALTER TABLE people
+  RENAME COLUMN first TO name;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/ddl-2.pl</p>
+
+  </section>
+
+  <section>
+    <h3>Transactional DDL</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_data-&gt;migrate(1);
+
+$pg-&gt;db-&gt;query(
+  &#39;INSERT INTO people (first, last) VALUES (?, ?)&#39;,
+  &#39;Joel&#39;, &#39;Berger&#39;
+);
+
+eval {
+  $pg-&gt;migrations-&gt;migrate;
+};
+warn $@ if $@;
+
+print dumper $pg-&gt;db-&gt;query(&#39;SELECT * FROM people&#39;)-&gt;hash;
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE people (
+  id BIGSERIAL PRIMARY KEY,
+  first TEXT,
+  last TEXT
+);
+
+-- 1 down
+
+DROP TABLE IF EXISTS people;
+
+-- 2 up
+
+ALTER TABLE people
+  ALTER COLUMN first SET DATA TYPE TEXT USING first || &#39; &#39; || last,
+  DROP COLUMN last;
+RAISE &#39;oh drat!&#39;;
+ALTER TABLE people
+  RENAME COLUMN first TO name;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/ddl-3.pl</p>
+
+  </section>
+</section>
+
+<section>
+  <h3>Check Constraints</h3>
+      <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_data-&gt;migrate;
+
+sub insert {
+  eval { $pg-&gt;db-&gt;query(&lt;&lt;&#39;  SQL&#39;, @_) };
+    INSERT INTO mountain (name, base, peak)
+    VALUES (?, ?, ?)
+  SQL
+  warn $@ ? $@ : &quot;Success!\n&quot;;
+}
+
+insert &#39;Everest&#39;, 17500, 29029;
+insert &#39;Sunken&#39;, -1000, 15000;
+insert &#39;Inverted&#39;, 29029, 17500;
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE mountain (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  base NUMERIC CHECK (base &gt; 0),
+  peak NUMERIC,
+  CHECK (peak &gt; base)
+);
+
+-- 1 down
+
+DROP TABLE IF EXISTS mountain;
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/check.pl</p>
+
+</section>
+
+<section>
+  <h3>Insert Returning</h3>
+      <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_data-&gt;migrate;
+
+print dumper $pg-&gt;db-&gt;query(&lt;&lt;&#39;SQL&#39;, &#39;pepperoni&#39;)-&gt;hash;
+  INSERT INTO pizza (request)
+  VALUES (?)
+  RETURNING *, TO_CHAR(created + &#39;30m&#39;::INTERVAL, &#39;HH:MI AM&#39;) AS due
+SQL
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE pizza (
+  id BIGSERIAL PRIMARY KEY,
+  request TEXT NOT NULL,
+  created TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 1 down
+
+DROP TABLE IF EXISTS pizza;
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/returning.pl</p>
+
+</section>
+
+<section>
+  <section>
+    <h3>Who Hasn't Done This?</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_file(&#39;ex/array.sql&#39;)-&gt;migrate;
+
+my $titles = [&#39;Game Change&#39;, &#39;Primary Colors&#39;];
+my $placeholders = join &#39;,&#39;, (&#39;?&#39;) x @$titles;
+
+my $sql = &quot;SELECT * FROM books WHERE title IN ($placeholders)&quot;;
+print dumper $pg-&gt;db-&gt;query($sql, @$titles)-&gt;hashes;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/array1.pl</p>
+
+  </section>
+  <section>
+    <h3>Array Types</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_file(&#39;ex/array.sql&#39;)-&gt;migrate;
+
+my $titles = [&#39;Game Change&#39;, &#39;Primary Colors&#39;];
+my $sql = &#39;SELECT * FROM books WHERE title = ANY(?)&#39;;
+print dumper $pg-&gt;db-&gt;query($sql, $titles)-&gt;hashes;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/array2.pl</p>
+
+  </section>
+  <section>
+    <h3>Array Types</h3>
+        <pre><code class="sql" data-trim>
+-- 1 up
+
+CREATE TABLE books (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  tags TEXT[] DEFAULT &#39;{}&#39;
+);
+INSERT INTO books (title, tags) VALUES
+(&#39;Primary Colors&#39;, &#39;{politics, history}&#39;),
+(&#39;Game Change&#39;, &#39;{politics, history}&#39;),
+(&#39;The Big Short&#39;, &#39;{finance, history}&#39;),
+(&#39;A Game of Thrones&#39;, &#39;{fantasy, magic}&#39;);
+
+-- 1 down
+
+DROP TABLE IF EXISTS books;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/array.sql</p>
+
+  </section>
+  <section>
+    <h3>Array Types</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_file(&#39;ex/array.sql&#39;)-&gt;migrate;
+
+my $tags = [&#39;history&#39;];
+my $sql = &#39;SELECT * FROM books WHERE tags &amp;&amp; ?&#39;;
+print dumper $pg-&gt;db-&gt;query($sql, $tags)-&gt;hashes;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/array3.pl</p>
+
+  </section>
+</section>
+
+<section>
+  <h3>$N Placeholders</h3>
+  <p>Positional placeholders (not just sequential)!</p>
+      <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+
+print dumper $pg-&gt;db-&gt;query(&#39;SELECT ?=? AS sane&#39;, &#39;twice&#39;, &#39;twice&#39;)-&gt;hash-&gt;{sane};
+print dumper $pg-&gt;db-&gt;query(&#39;SELECT $1=$1 AS sane&#39;, &#39;ONCE&#39;)-&gt;hash-&gt;{sane};
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/dollar.pl</p>
+
+</section>
+
+<section>
+  <h3>JSON(B) Types</h3>
+      <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_data-&gt;migrate;
+
+sub update_report {
+  my $report = shift;
+  my $result = $pg-&gt;db-&gt;query(&lt;&lt;&#39;  SQL&#39;, {json =&gt; $report})-&gt;hash || {};
+    INSERT INTO reports (title, data)
+    SELECT $1::JSONB-&gt;&gt;&#39;title&#39;, $1
+    WHERE COALESCE((
+      SELECT data &lt;&gt; $1
+      FROM reports
+      WHERE title = $1::JSONB-&gt;&gt;&#39;title&#39;
+      ORDER BY ts DESC
+      LIMIT 1
+    ), &#39;t&#39;) 
+    RETURNING jsonb_pretty(data) AS formatted;
+  SQL
+  return $result-&gt;{formatted} || &#39;&#39;;
+}
+
+print update_report {
+  title =&gt; &#39;myreport&#39;,
+  stock_price =&gt; &#39;14&#39;,
+};
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE reports (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  ts TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  data JSONB NOT NULL DEFAULT &#39;{}&#39;
+);
+INSERT INTO reports (title) VALUES (&#39;myreport&#39;);
+
+-- 1 down
+
+DROP TABLE IF EXISTS reports;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/jsonb.pl</p>
+
+</section>
+
+<section>
+  <h3>Upsert</h3>
+      <pre><code class="perl" data-trim>
+use Mojolicious::Lite; use Mojo::Pg;
+use Data::UUID;
+
+app-&gt;secrets([&#39;notsosecret&#39;]);
+
+helper pg =&gt; sub {
+  state $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+};
+app-&gt;pg-&gt;migrations-&gt;from_data-&gt;migrate;
+
+helper sid =&gt; sub {
+  return shift-&gt;session-&gt;{sid} ||= Data::UUID-&gt;new-&gt;create_str;
+};
+
+helper get_session =&gt; sub {
+  my $c = shift;
+  return $c-&gt;pg-&gt;db-&gt;query(&lt;&lt;&#39;  SQL&#39;, $c-&gt;sid)-&gt;expand-&gt;hash-&gt;{payload};
+    INSERT INTO session (sid)
+    VALUES (?)
+    ON CONFLICT (sid) DO UPDATE SET
+      seen = CURRENT_TIMESTAMP
+    RETURNING payload
+  SQL
+};
+
+helper set_session =&gt; sub {
+  my ($c, $payload) = @_;
+  return !!$c-&gt;pg-&gt;db-&gt;query(&lt;&lt;&#39;  SQL&#39;, $c-&gt;sid, {json =&gt; $payload})-&gt;rows;
+    INSERT INTO session (sid, payload)
+    VALUES (?, ?)
+    ON CONFLICT (sid) DO UPDATE SET
+      seen    = CURRENT_TIMESTAMP,
+      payload = EXCLUDED.payload
+    RETURNING payload
+  SQL
+};
+
+get &#39;/&#39; =&gt; sub {
+  my $c = shift;
+  my $session = $c-&gt;get_session;
+  my $accessed = ++$session-&gt;{accessed};
+  $c-&gt;set_session($session);
+  $c-&gt;render(text =&gt; &quot;Accessed $accessed time(s)&quot;);
+};
+
+app-&gt;start
+
+__DATA__
+
+@@ migrations
+
+-- 1 up
+
+CREATE TABLE session (
+  sid UUID PRIMARY KEY,
+  seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  payload JSONB DEFAULT &#39;{}&#39;
+);
+
+-- 1 down
+
+DROP TABLE IF EXISTS session;
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/upsert.pl</p>
+
+</section>
+
+<section>
+  <h3>Notify</h3>
+      <pre><code class="perl" data-trim>
+use Mojolicious::Lite;
+use Mojo::Pg;
+
+helper pg =&gt; sub { state $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;) };
+
+get &#39;/&#39; =&gt; &#39;chat&#39;;
+
+websocket &#39;/channel&#39; =&gt; sub {
+  my $c = shift;
+
+  $c-&gt;inactivity_timeout(3600);
+
+  # Forward messages from the browser to PostgreSQL
+  $c-&gt;on(message =&gt; sub { shift-&gt;pg-&gt;pubsub-&gt;notify(mojochat =&gt; shift) });
+
+  # Forward messages from PostgreSQL to the browser
+  my $cb = $c-&gt;pg-&gt;pubsub-&gt;listen(mojochat =&gt; sub { $c-&gt;send(pop) });
+  $c-&gt;on(finish =&gt; sub { shift-&gt;pg-&gt;pubsub-&gt;unlisten(mojochat =&gt; $cb) });
+};
+
+app-&gt;start;
+
+__DATA__
+
+@@ chat.html.ep
+&lt;form onsubmit=&quot;sendChat(this.children[0]); return false&quot;&gt;&lt;input&gt;&lt;/form&gt;
+&lt;div id=&quot;log&quot;&gt;&lt;/div&gt;
+&lt;script&gt;
+  var ws  = new WebSocket(&#39;&lt;%= url_for(&#39;channel&#39;)-&gt;to_abs %&gt;&#39;);
+  ws.onmessage = function (e) {
+    document.getElementById(&#39;log&#39;).innerHTML += &#39;&lt;p&gt;&#39; + e.data + &#39;&lt;/p&gt;&#39;;
+  };
+  function sendChat(input) { ws.send(input.value); input.value = &#39;&#39; }
+&lt;/script&gt;
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/chat.pl</p>
+
+</section>
+
+<section>
+  <section>
+    <h3>Materialized Views</h3>
+        <pre><code class="sql" data-trim>
+-- 1 up
+
+CREATE TABLE users (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE books (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL
+);
+
+CREATE TABLE user_books (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users ON DELETE CASCADE,
+  book_id BIGINT REFERENCEs books ON DELETE CASCADE,
+  rating INT CHECK (rating &gt;= 0) CHECK (rating &lt;= 10)
+);
+
+CREATE MATERIALIZED VIEW user_book_view AS
+SELECT
+  users.name,
+  array_agg (
+    books.title ORDER BY user_books.rating DESC
+  ) AS favorite_books
+FROM users
+LEFT JOIN user_books ON users.id=user_books.user_id
+LEFT JOIN books ON user_books.book_id=books.id
+WHERE user_books.rating &gt;= 7
+GROUP BY users.name
+WITH NO DATA;
+
+-- 1 down
+
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS books CASCADE;
+DROP TABLE IF EXISTS user_books CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS user_book_view CASCADE;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/materialized.sql</p>
+
+  </section>
+
+  <section>
+    <h3>Materialized Views</h3>
+        <pre><code class="perl" data-trim>
+use Mojo::Base -strict; use Mojo::Pg; use Mojo::Util &#39;dumper&#39;;
+
+my $pg = Mojo::Pg-&gt;new(&#39;postgresql://test:test@/test&#39;);
+$pg-&gt;migrations-&gt;from_file(&#39;ex/materialized.sql&#39;)-&gt;migrate;
+
+my $db = $pg-&gt;db;
+my $joel = $db-&gt;query(&lt;&lt;&#39;SQL&#39;, &#39;joel&#39;)-&gt;hash-&gt;{id};
+  INSERT INTO users (name)
+  VALUES (?)
+  RETURNING id
+SQL
+
+sub insert_book {
+  return $db-&gt;query(&lt;&lt;&#39;  SQL&#39;, shift)-&gt;hash-&gt;{id};
+    INSERT INTO books (title)
+    VALUES (?)
+    RETURNING id
+  SQL
+}
+
+sub rate_book {
+  $db-&gt;query(&lt;&lt;&#39;  SQL&#39;, @_);
+    INSERT INTO user_books (user_id, book_id, rating)
+    VALUES (?, ?, ?)
+  SQL
+}
+
+rate_book $joel, insert_book(&#39;A Game of Thones&#39;), 10;
+rate_book $joel, insert_book(q[All the President&#39;s Men]), 8;
+rate_book $joel, insert_book(&#39;The Stand&#39;), 3;
+
+$db-&gt;query(&#39;REFRESH MATERIALIZED VIEW user_book_view&#39;);
+
+print dumper $db-&gt;query(&#39;SELECT * FROM user_book_view&#39;)-&gt;hashes;
+
+    </code></pre>
+    <p style="float: right; text-color: white; font-size: small;">ex/materialized.pl</p>
+
+  </section>
+</section>
+
+<section>
+  <h3>Row-Level Locking</h3>
+
+  <ul>
+    <li>Lock rows for write or access</li>
+    <li>Can skip locked rows!</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Thanks!</h2>
+</section>
+
+			</div>
+
+		</div>
+
+		<script src="revealjs/lib/js/head.min.js"></script>
+		<script src="revealjs/js/reveal.js"></script>
+
+		<script>
+			// Full list of configuration options available at:
+			// https://github.com/hakimel/reveal.js#configuration
+      
+      var init = {"center":true,"controls":true,"history":true,"progress":true,"transition":"slide"};
+			// Optional reveal.js plugins
+      init.dependencies = [
+        { src: 'revealjs/lib/js/classList.js', condition: function() { return !document.body.classList; } },
+        { src: 'revealjs/plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+        { src: 'revealjs/plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+        { src: 'revealjs/plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+        { src: 'revealjs/plugin/zoom-js/zoom.js', async: true },
+        { src: 'revealjs/plugin/notes/notes.js', async: true }
+      ];
+
+      
+			Reveal.initialize(init);
+
+		</script>
+
+    
+	</body>
+</html>
